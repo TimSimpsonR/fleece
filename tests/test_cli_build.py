@@ -93,6 +93,7 @@ class TestBuildDispatchesToCorrectFunction(unittest.TestCase):
             python_version='python27',
             src_dir=self.rel_path('src'),
             requirements_path=self.rel_path('src/requirements.txt'),
+            requirements_attach_directory=self.rel_path('src'),
             dependencies=[''],
             rebuild=False,
             exclude=None,
@@ -126,6 +127,7 @@ class TestBuildDispatchesToCorrectFunction(unittest.TestCase):
             python_version='python27',
             src_dir=self.rel_path('src'),
             requirements_path=self.rel_path('src/requirements.txt'),
+            requirements_attach_directory=self.rel_path('src'),
             dependencies=[''],
             rebuild=False,
             exclude=None,
@@ -161,6 +163,7 @@ class TestBuildDispatchesToCorrectFunction(unittest.TestCase):
             python_version='python27',
             src_dir=self.rel_path('src'),
             requirements_path=self.rel_path('src/requirements.txt'),
+            requirements_attach_directory=self.rel_path('src'),
             dependencies=[''],
             rebuild=False,
             exclude=['foo', 'bar'],
@@ -189,6 +192,7 @@ class TestBuildDispatchesToCorrectFunction(unittest.TestCase):
             python_version='python27',
             src_dir=self.rel_path('src'),
             requirements_path=self.rel_path('wacky-requirements.txt'),
+            requirements_attach_directory=self.tmpdir,
             dependencies=[''],
             rebuild=False,
             exclude=None,
@@ -303,6 +307,8 @@ class TestBuildWithPipenv(unittest.TestCase):
 
         def on_build(**kwargs):
             r_p = kwargs.pop('requirements_path')
+            r_a_d = kwargs.pop('requirements_attach_directory')
+
             self.assertEquals(kwargs, expected_kwargs)
             # This will be in a random directory created by _build_with_pipenv
             self.assertTrue(r_p.endswith('/pipfile-requirements.txt'))
@@ -310,6 +316,8 @@ class TestBuildWithPipenv(unittest.TestCase):
             # Make sure it wrote what the mock subprocess call gave it
             with open(r_p) as f:
                 self.assertEqual(f.read(), self.requirements_txt_contents)
+
+            assert os.path.dirname(r_p) == r_a_d
             build_state['requirements_path'] = r_p
 
         self.mock_build.side_effect = on_build

@@ -31,6 +31,13 @@ def parse_args(args):
                         default='',
                         help=('requirements.txt file with dependencies '
                               '(default: $service_dir/src/requirements.txt)'))
+    parser.add_argument('--requirements-attach-directory', type=str,
+                        default=None,
+                        help=('advanced option: specifies a parent directory '
+                              'of requirements.txt to attach inside the Docker'
+                              ' container to allow for the installation of '
+                              'local packages using '
+                              '`-e ../<some-directory-path>`'))
     parser.add_argument('--pipfile', '-p', type=str,
                         default='',
                         help=('directory containing Pipfile.lock '
@@ -164,6 +171,10 @@ def build(args):
         requirements_path = os.path.abspath(args.requirements)
     elif args.pipfile:
         pipfile = args.pipfile
+        if args.requirements_attach_directory:
+            print('Error: `requirements-attach-directory` does not work with '
+                  '`pipfile`.')
+            sys.exit(1)
     else:
         potential_req_file = os.path.join(service_dir, 'src/requirements.txt')
         potential_pipfile = os.path.join(service_dir, 'Pipfile.lock')
@@ -188,11 +199,28 @@ def build(args):
             print('Error: requirements file {} not found!'.format(
                 requirements_path))
             sys.exit(1)
+
+        requirements_attach_directory = args.requirements_attach_directory
+        if not requirements_attach_directory:
+            requirements_attach_directory = os.path.dirname(requirements_path)
+
+        requirements_attach_directory = os.path.abspath(
+            requirements_attach_directory)
+
+        common_req_path = os.path.commonprefix(
+            [requirements_attach_directory, requirements_path])
+        if common_req_path != requirements_attach_directory:
+            print('`requirements-attach-directory` must be a parent directory '
+                  'of `requirements`')
+            sys.exit(1)
+
         _build(service_name=service_name,
                python_version=python_version,
                src_dir=src_dir,
                dependencies=dependencies,
                requirements_path=requirements_path,
+               requirements_attach_directory=(
+                    requirements_attach_directory),
                rebuild=args.rebuild,
                exclude=args.exclude,
                dist_dir=dist_dir,
@@ -239,6 +267,7 @@ def _build_with_pipenv(service_name, python_version, src_dir, pipfile,
                python_version=python_version,
                src_dir=src_dir,
                requirements_path=requirements_path,
+               requirements_attach_directory=tmpdir,
                dependencies=dependencies,
                rebuild=rebuild,
                exclude=exclude,
@@ -254,6 +283,7 @@ def _build_with_pipenv(service_name, python_version, src_dir, pipfile,
 
 
 def _build(service_name, python_version, src_dir, requirements_path,
+           requirements_attach_directory,
            dependencies, rebuild, exclude, dist_dir, inject_build_info):
     print('Building {} with {}...'.format(service_name, python_version))
 
@@ -269,6 +299,9 @@ def _build(service_name, python_version, src_dir, requirements_path,
 
     with open(requirements_path, 'rb') as fp:
         dependencies_sha1 = hashlib.sha1(fp.read()).hexdigest()
+
+    requirements_rel_path = os.path.relpath(
+        requirements_path, requirements_attach_directory)
 
     # Set up volumes
     src_name = '{}-src'.format(service_name)
@@ -297,16 +330,20 @@ def _build(service_name, python_version, src_dir, requirements_path,
 
     # Inject our source and requirements
     put_files(src, src_dir, '/src')
-    put_files(src, requirements_path, '/requirements',
-              single_file_name='requirements.txt')
+    put_files(src, requirements_attach_directory, '/requirements')
+    # put_files(src, requirements_path, '/requirements',
+    #           single_file_name='requirements.txt')
 
     # Environment variables (including any PIP configuration variables)
-    environment = {'DEPENDENCIES_SHA': dependencies_sha1,
-                   'VERSION_HASH': get_version_hash(),
-                   'BUILD_TIME': datetime.utcnow().isoformat(),
-                   'REBUILD_DEPENDENCIES': '1' if rebuild else '0',
-                   'EXCLUDE_PATTERNS': ' '.join(
-                       ['"{}"'.format(e) for e in exclude or []])}
+    environment = {
+        'DEPENDENCIES_SHA': dependencies_sha1,
+        'VERSION_HASH': get_version_hash(),
+        'BUILD_TIME': datetime.utcnow().isoformat(),
+        'REBUILD_DEPENDENCIES': '1' if rebuild else '0',
+        'EXCLUDE_PATTERNS': ' '.join(
+            ['"{}"'.format(e) for e in exclude or []]),
+        'REQUIREMENTS_FILE': '/requirements/{}'.format(requirements_rel_path)
+    }
     for var, value in os.environ.items():
         if var.startswith('PIP_'):
             environment[var] = value

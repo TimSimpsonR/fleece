@@ -215,6 +215,11 @@ optional arguments:
   --requirements REQUIREMENTS, -r REQUIREMENTS
                         requirements.txt file with dependencies (default:
                         $service_dir/src/requirements.txt)
+  --requirements-attach-directory REQUIREMENTS-ATTACH-DIRECTORY
+                        advanced option: specifies a parent directory of
+                        requirements.txt to attach inside the Docker container
+                        to allow for the installation of local packages
+                        using `-e ../<some-directory-path>`
   --dependencies DEPENDENCIES, -d DEPENDENCIES
                         comma separated list of system dependencies
   --target TARGET, -t TARGET
