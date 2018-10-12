@@ -292,10 +292,14 @@ def _build(service_name, python_version, src_dir, requirements_path,
     except:
         raise RuntimeError("Docker not found.")
 
-    image, _logs = docker_api.images.build(
+    image_build_result = docker_api.images.build(
         path=build_dir, tag=service_name,
         buildargs={'python_version': python_version,
                    'deps': ' '.join(dependencies)})
+    try:
+        image, _logs = image_build_result
+    except TypeError:
+        image = image_build_result
 
     with open(requirements_path, 'rb') as fp:
         dependencies_sha1 = hashlib.sha1(fp.read()).hexdigest()
@@ -305,17 +309,25 @@ def _build(service_name, python_version, src_dir, requirements_path,
 
     # Set up volumes
     src_name = '{}-src'.format(service_name)
-    req_name = '{}-requirements'.format(service_name)
     dist_name = '{}-dist'.format(service_name)
     create_volume(src_name)
-    create_volume(req_name)
     create_volume(dist_name)
 
     src = create_volume_container(
-        volumes=[
-            '{}:/src'.format(src_name),
-            '{}:/requirements'.format(req_name),
-            '{}:/dist'.format(dist_name)]
+        volumes={
+            src_name: {
+                'bind': '/src',
+                'mode': 'rw',
+            },
+            dist_name: {
+                'bind': '/dist',
+                'mode': 'rw',
+            },
+            requirements_attach_directory: {
+                'bind': '/requirements',
+                'mode': 'rw'
+            },
+        }
     )
 
     # We want our build cache to remain over time if possible.
@@ -330,9 +342,8 @@ def _build(service_name, python_version, src_dir, requirements_path,
 
     # Inject our source and requirements
     put_files(src, src_dir, '/src')
-    put_files(src, requirements_attach_directory, '/requirements')
-    # put_files(src, requirements_path, '/requirements',
-    #           single_file_name='requirements.txt')
+
+    docker_requirements_rel_path = '/requirements/{}'.format(requirements_rel_path)
 
     # Environment variables (including any PIP configuration variables)
     environment = {
@@ -342,7 +353,9 @@ def _build(service_name, python_version, src_dir, requirements_path,
         'REBUILD_DEPENDENCIES': '1' if rebuild else '0',
         'EXCLUDE_PATTERNS': ' '.join(
             ['"{}"'.format(e) for e in exclude or []]),
-        'REQUIREMENTS_FILE': '/requirements/{}'.format(requirements_rel_path)
+        'REQUIREMENTS_FILE': docker_requirements_rel_path,
+        'REQUIREMENTS_FILE_DIRECTORY':
+            os.path.dirname(docker_requirements_rel_path),
     }
     for var, value in os.environ.items():
         if var.startswith('PIP_'):
